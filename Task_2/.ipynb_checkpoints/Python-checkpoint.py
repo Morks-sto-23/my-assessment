@@ -16,6 +16,8 @@ All loans have a loan term of 2 years with an annual interest rate of 10%. Repay
 A type 1 default occurs on a loan when any scheduled monthly repayment is not met in full.
 A type 2 default occurs on a loan when more than 15% of the expected total payments are unpaid for the year.
 
+Note: Do not round any final answers.
+
 """
 
 
@@ -29,7 +31,7 @@ def calculate_df_balances(df_scheduled, df_actual):
         df_actual (DataFrame): Dataframe created from the 'actual_loan_repayments.csv' dataset
 
     Returns:
-        DataFrame: A merged Dataframe with additional calculated columns to help with the following questions
+        DataFrame: A merged Dataframe with additional calculated columns to help with the following questions.
 
     """
 
@@ -72,14 +74,6 @@ def calculate_df_balances(df_scheduled, df_actual):
     df_balances["LoanBalanceEnd"] = df_balances["LoanBalanceEnd"].round(2)
     df_balances["InterestPayment"] = df_balances["InterestPayment"].round(2)
     df_balances["LoanBalanceStart"] = df_balances["LoanBalanceStart"].round(2)
-    df_balances["ScheduledPrincipal"] = (
-        df_balances["ScheduledRepayment"] - df_balances["InterestPayment"]
-    )
-    df_balances["UnscheduledPrincipal"] = np.where(
-        df_balances["ActualRepayment"] > df_balances["ScheduledRepayment"],
-        df_balances["ActualRepayment"] - df_balances["ScheduledRepayment"],
-        0,
-    )
 
     return df_balances
 
@@ -106,19 +100,22 @@ def question_1(df_balances):
 
     Returns:
         float: The percentage of type 1 defaulted loans (ie 50.0 not 0.5)
+        
+        
+        meaning of type 1 is when atcualPayment < scheduled 
+        1 identify loans where payment was not made in full
+        2 count num of defaulted loans
+        3 total of unique loans ie by LoanID
+        4 calc %
 
     """
-    # deleteing starts here
-    default_mask = df_balances["ActualRepayment"] < df_balances["ScheduledRepayment"]
-    defaults = df_balances[default_mask]
+    defaulted_loans = df_balances.groupby("LoanID").apply(
+        lambda x: (x["ActualRepayment"] < x["ScheduledRepayment"]).any()
+    )
 
-    customers_who_defaulted = defaults["LoanID"].unique()
-    num_defaults = len(customers_who_defaulted)
-    total_customers = df_balances["LoanID"].nunique()
-
-    default_rate = num_defaults / total_customers
-    default_rate_percent = default_rate * 100
-    # deleteing ends here
+        num_defaulted_loans = defaulted_loans.sum()
+        total_loans = df_balances["LoanID"].nunique()
+        default_rate_percent = round((num_defaulted_loans/total_loans )*100,2)
 
     return default_rate_percent
 
@@ -134,21 +131,27 @@ def question_2(df_scheduled, df_balances):
     Returns:
         float: The percentage of type 2 defaulted loans (ie 50.0 not 0.5)
 
+        1 calc total scheduled repayment for each loan
+        2 calc total actual repayments for each loan
+        3 calc unpaid schduled payments
+        4 identify loans where unpaid > 15% of sceduled
+        5 get total number of loans that defaulted
+        6 get total number of loans
+        7 % of defaulted loans
+        
+
     """
-    # deleteing starts here
-    df_yearly = df_scheduled
-    df_yearly["YearlyScheduled"] = df_yearly["ScheduledRepayment"] * 12
 
-    yearly_actual = df_balances.groupby("LoanID")["ActualRepayment"].sum().to_list()
-    df_yearly["YearlyActual"] = yearly_actual
-    filtr = df_yearly["YearlyActual"] <= 0.85 * df_yearly["YearlyScheduled"]
+    scheduled_totals = df_scheduled.groupby("LoanID")["ScheduledRepayment"].sum()
+    actual_totals = df_balances.groupby("LoanID")["ActualRepayment"].sum()
+    unpaid_amounts = scheduled_totals - actual_totals
+    type_2_defaulted_loans = (unpaid_amounts > (0.15 *scheduled_totals ))
+    num_defaulted_loans = type_2_defaulted_loans.sum()
+    total_loans = df_scheduled["LoanID"].nunique()
 
-    num_defaults = len(df_yearly[filtr])
-
-    total_customers = df_yearly["LoanID"].nunique()
-
-    default_rate_percent = 100 * num_defaults / total_customers
-    # deleteing ends here
+    default_rate_percent = (num_defaulted_loans / total_loans)*100
+    
+    
 
     return default_rate_percent
 
@@ -157,6 +160,7 @@ def question_3(df_balances):
     """
     Calculate the anualized portfolio CPR (As a %) from the geometric mean SMM.
     SMM is calculated as: (Unscheduled Principal)/(Start of Month Loan Balance)
+    SMM_mean is calculated as (∏(1+SMM))^(1/12) - 1
     CPR is calcualted as: 1 - (1- SMM_mean)^12
 
     Args:
@@ -165,27 +169,26 @@ def question_3(df_balances):
     Returns:
         float: The anualized CPR of the loan portfolio as a percent.
 
-    """
-    # deleteing starts here
-    df_smm = pd.DataFrame()
-    df_smm["UnscheduledPrincipal"] = df_balances.groupby(df_balances["Month"])[
-        "UnscheduledPrincipal"
-    ].sum()
-    df_smm["LoanPortfolioBalance"] = df_balances.groupby(df_balances["Month"])[
-        "LoanBalanceStart"
-    ].sum()
-    df_smm["SMM"] = (df_smm["UnscheduledPrincipal"]) / df_smm["LoanPortfolioBalance"]
-    df_smm.reset_index(inplace=True)
+        1 calc SMM (Unscheduled Principal)/(Start of Month Loan Balance)
+        2 remove NAN values where /0 
+        3 calc geometric mean (1 + smm) over 12 months
+        4 calc cpr
+        5 %
 
-    mean_smm = ((1 + df_smm["SMM"]).prod()) ** (1 / 12) - 1
-    cpr = 1 - (1 - mean_smm) ** 12
-    cpr_percent = 100 * cpr
-    # deleteing ends here
+    """
+
+    df_balances["SMM"] = df_balances["UnscheduledPrincipal"] / df_balances["LoanBalanceStart"].replace(0, np.nan)
+    df_balances = df_balances.dropna(subset=["SMM"])
+    smm_mean = np.prod(1+df_balances["SMM"])**(1/12)-1
+    cpr = 1 - (1 - smm_mean)**12
+    cpr_percent = round(cpr * 100,2)
+    
+    
 
     return cpr_percent
 
 
-def question_4(df_balances):
+def question_4(df_balances,type_2_default_rate):
     """
     Calculate the predicted total loss for the second year in the loan term.
     Use the equation: probability_of_default * total_loan_balance * (1 - recovery_rate).
@@ -198,17 +201,16 @@ def question_4(df_balances):
 
     Returns:
         float: The predicted total loss for the second year in the loan term.
+        1 define recovery rate
+        2 convert type 2 % to probability
+        3 get total loan balance at start of y2
+        4 predict loss 
+        
 
     """
-    # deleteing starts here
-    probability_of_default = question_2(df_scheduled, df_balances) / 100
-
-    total_loan_balance_list = df_balances.groupby(df_balances["Month"])[
-        "LoanBalanceEnd"
-    ].sum()
-    total_loan_balance_final = total_loan_balance_list[12]
-
-    total_loss = probability_of_default * total_loan_balance_final * (1 - 0.8)
-    # deleteing ends here
-
+    recovery_rate = 0.80
+    probability_of_default = type_2_default_rate/100
+    total_loan_balance = df_balances[df_balances["Month"]>12]["LoanBalanceEnd"].sum()
+    total_loss = round(probability_of_default * total_loan_balance *(1- recovery_rate),2)
+    
     return total_loss
