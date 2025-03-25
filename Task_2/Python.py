@@ -109,13 +109,16 @@ def question_1(df_balances):
         4 calc %
 
     """
-    defaulted_loans = df_balances.groupby("LoanID").apply(
-        lambda x: (x["ActualRepayment"] < x["ScheduledRepayment"]).any()
-    )
 
-        num_defaulted_loans = defaulted_loans.sum()
-        total_loans = df_balances["LoanID"].nunique()
-        default_rate_percent = round((num_defaulted_loans/total_loans )*100,2)
+     default_mask = df_balances["ActualRepayment"] < df_balances["ScheduledRepayment"]
+     defaults = df_balances[default_mask]
+ 
+     customers_who_defaulted = defaults["LoanID"].unique()
+     num_defaults = len(customers_who_defaulted)
+     total_customers = df_balances["LoanID"].nunique()
+ 
+     default_rate = num_defaults / total_customers
+     default_rate_percent = default_rate * 100
 
     return default_rate_percent
 
@@ -142,14 +145,18 @@ def question_2(df_scheduled, df_balances):
 
     """
 
-    scheduled_totals = df_scheduled.groupby("LoanID")["ScheduledRepayment"].sum()
-    actual_totals = df_balances.groupby("LoanID")["ActualRepayment"].sum()
-    unpaid_amounts = scheduled_totals - actual_totals
-    type_2_defaulted_loans = (unpaid_amounts > (0.15 *scheduled_totals ))
-    num_defaulted_loans = type_2_defaulted_loans.sum()
-    total_loans = df_scheduled["LoanID"].nunique()
-
-    default_rate_percent = (num_defaulted_loans / total_loans)*100
+     df_yearly = df_scheduled
+     df_yearly["YearlyScheduled"] = df_yearly["ScheduledRepayment"] * 12
+ 
+     yearly_actual = df_balances.groupby("LoanID")["ActualRepayment"].sum().to_list()
+     df_yearly["YearlyActual"] = yearly_actual
+     filtr = df_yearly["YearlyActual"] <= 0.85 * df_yearly["YearlyScheduled"]
+ 
+     num_defaults = len(df_yearly[filtr])
+ 
+     total_customers = df_yearly["LoanID"].nunique()
+ 
+     default_rate_percent = 100 * num_defaults / total_customers
     
     
 
@@ -177,11 +184,19 @@ def question_3(df_balances):
 
     """
 
-    df_balances["SMM"] = df_balances["UnscheduledPrincipal"] / df_balances["LoanBalanceStart"].replace(0, np.nan)
-    df_balances = df_balances.dropna(subset=["SMM"])
-    smm_mean = np.prod(1+df_balances["SMM"])**(1/12)-1
-    cpr = 1 - (1 - smm_mean)**12
-    cpr_percent = round(cpr * 100,2)
+     df_smm = pd.DataFrame()
+     df_smm["UnscheduledPrincipal"] = df_balances.groupby(df_balances["Month"])[
+         "UnscheduledPrincipal"
+     ].sum()
+     df_smm["LoanPortfolioBalance"] = df_balances.groupby(df_balances["Month"])[
+         "LoanBalanceStart"
+     ].sum()
+     df_smm["SMM"] = (df_smm["UnscheduledPrincipal"]) / df_smm["LoanPortfolioBalance"]
+     df_smm.reset_index(inplace=True)
+ 
+     mean_smm = ((1 + df_smm["SMM"]).prod()) ** (1 / 12) - 1
+     cpr = 1 - (1 - mean_smm) ** 12
+     cpr_percent = 100 * cpr
     
     
 
@@ -208,9 +223,14 @@ def question_4(df_balances,type_2_default_rate):
         
 
     """
-    recovery_rate = 0.80
-    probability_of_default = type_2_default_rate/100
-    total_loan_balance = df_balances[df_balances["Month"]>12]["LoanBalanceEnd"].sum()
-    total_loss = round(probability_of_default * total_loan_balance *(1- recovery_rate),2)
+    
+     probability_of_default = question_2(df_scheduled, df_balances) / 100
+ 
+     total_loan_balance_list = df_balances.groupby(df_balances["Month"])[
+         "LoanBalanceEnd"
+     ].sum()
+     total_loan_balance_final = total_loan_balance_list[12]
+ 
+     total_loss = probability_of_default * total_loan_balance_final * (1 - 0.8)
     
     return total_loss

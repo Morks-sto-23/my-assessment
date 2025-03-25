@@ -36,7 +36,9 @@ def question_2():
     Return the `Name`, `Surname` and `Income` of all female customers in the dataset in descending order of income
     """
 
-    qry = """Select Name, Surname, Income from customers where Gender ='Female' order by Income Desc"""
+    qry = """Select Name, Surname, Income 
+              from customers where Gender ='Female' 
+              order by Income Desc"""
 
     return qry
 
@@ -48,7 +50,7 @@ def question_3():
     There is only 1 loan per customer ID.
     """
 
-    qry = """Select LoanTerm, count(Case when ApprovalStatus ='Approved' then 1 end)* 100 / count(*) as ApprovalPersentage 
+    qry = """Select LoanTerm, count(Case when ApprovalStatus ='Approved' then 1 end)* 100 / count(*) as               ApprovalPersentage 
              from loans group by LoanTerm"""
 
     return qry
