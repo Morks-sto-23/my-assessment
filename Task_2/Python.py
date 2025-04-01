@@ -203,7 +203,7 @@ def question_3(df_balances):
     return cpr_percent
 
 
-def question_4(df_balances,type_2_default_rate):
+def question_4(df_balances):
     """
     Calculate the predicted total loss for the second year in the loan term.
     Use the equation: probability_of_default * total_loan_balance * (1 - recovery_rate).
